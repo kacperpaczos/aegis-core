@@ -1,0 +1,11 @@
+#pragma once
+
+// Server configuration
+#define SERVER_VERSION "@version@"
+#define SERVER_PORT @port@
+#define SERVER_THREADS @threads@
+#define SERVER_MAX_CONNECTIONS @max_connections@
+#define SERVER_QUEUE_SIZE @queue_size@
+#define SERVER_SSL_ENABLED @ssl_enabled@
+#define SERVER_LOG_LEVEL "@log_level@"
+#define SERVER_WORKING_DIR "@working_dir@" 
