@@ -66,47 +66,52 @@ Poco::JSON::Object handleEnroll(const Poco::JSON::Object& request) {
 Poco::JSON::Object handleTrain(const Poco::JSON::Object& request) {
     Poco::JSON::Object response;
     
-    // Dodaj debugowanie
-    std::ostringstream debugStr;
-    request.stringify(debugStr);
-    std::cerr << "Received request: " << debugStr.str() << std::endl;
+    std::cerr << "Otrzymano żądanie trenowania" << std::endl;
     
     if (request.has("video_path")) {
         std::string videoPath = request.getValue<std::string>("video_path");
+        std::cerr << "Ścieżka do wideo: " << videoPath << std::endl;
         
-        // Dodaj debugowanie
-        std::cerr << "Video path: " << videoPath << std::endl;
-        
-        // Przygotowanie żądania do serwera Pythona
-        Poco::Net::HTTPClientSession session("localhost", 8081);
-        Poco::Net::HTTPRequest pythonRequest(Poco::Net::HTTPRequest::HTTP_POST, "/train");
-        pythonRequest.setContentType("application/json");
-        
-        // Tworzenie body żądania
-        Poco::JSON::Object requestBody;
-        requestBody.set("video_path", videoPath);
-        std::stringstream ss;
-        requestBody.stringify(ss);
-        
-        // Wysłanie żądania
-        pythonRequest.setContentLength(ss.str().length());
-        std::ostream& requestStream = session.sendRequest(pythonRequest);
-        requestStream << ss.str();
-        
-        // Odbieranie odpowiedzi
-        Poco::Net::HTTPResponse pythonResponse;
-        std::istream& responseStream = session.receiveResponse(pythonResponse);
-        
-        if (pythonResponse.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
-            response.set("status", "success");
-            response.set("message", "Training request sent successfully");
-        } else {
+        try {
+            // Zmiana portu z 8081 na 8080
+            Poco::Net::HTTPClientSession session("localhost", 8080);
+            Poco::Net::HTTPRequest pythonRequest(Poco::Net::HTTPRequest::HTTP_POST, "/train");
+            pythonRequest.setContentType("application/json");
+            
+            // Przygotowanie body żądania
+            Poco::JSON::Object requestBody;
+            requestBody.set("video_path", videoPath);
+            std::stringstream ss;
+            requestBody.stringify(ss);
+            
+            std::cerr << "Wysyłanie żądania do serwera Python: " << ss.str() << std::endl;
+            
+            pythonRequest.setContentLength(ss.str().length());
+            std::ostream& requestStream = session.sendRequest(pythonRequest);
+            requestStream << ss.str();
+            requestStream.flush();
+            
+            Poco::Net::HTTPResponse pythonResponse;
+            std::istream& responseStream = session.receiveResponse(pythonResponse);
+            
+            std::cerr << "Otrzymano odpowiedź od serwera Python: " << pythonResponse.getStatus() << std::endl;
+            
+            if (pythonResponse.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
+                response.set("status", "success");
+                response.set("message", "Rozpoczęto trenowanie modelu");
+            } else {
+                response.set("status", "error");
+                response.set("message", "Błąd podczas rozpoczynania trenowania");
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Błąd podczas komunikacji z serwerem Python: " << e.what() << std::endl;
             response.set("status", "error");
-            response.set("message", "Failed to send training request");
+            response.set("message", std::string("Błąd: ") + e.what());
         }
     } else {
-        std::cerr << "video_path field not found in request" << std::endl;
-        response.set("error", "No video_path provided");
+        std::cerr << "Brak wymaganego pola video_path" << std::endl;
+        response.set("status", "error");
+        response.set("message", "Brak wymaganego pola: video_path");
     }
     
     return response;
