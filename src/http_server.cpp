@@ -34,26 +34,34 @@ void SimpleHandler::handleRequest(Poco::Net::HTTPServerRequest& request,
     }
     
     try {
-        // Czytamy body requestu
         std::string body;
-        std::istream& stream = request.stream();
-        while (stream.good()) {
-            char buffer[128];
-            stream.read(buffer, sizeof(buffer));
-            body.append(buffer, stream.gcount());
-        }
-        
-        // Debugowanie
-        std::cerr << "Received body: " << body << std::endl;
-        
         Poco::JSON::Object requestJson;
         
-        // Parsuj JSON tylko jeśli body nie jest puste
-        if (!body.empty()) {
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var result = parser.parse(body);
-            Poco::JSON::Object::Ptr jsonPtr = result.extract<Poco::JSON::Object::Ptr>();
-            requestJson = *jsonPtr;
+        // Sprawdź czy jest Content-Length
+        if (request.hasContentLength()) {
+            // Czytamy body requestu tylko jeśli jest Content-Length
+            std::istream& stream = request.stream();
+            auto contentLength = request.getContentLength();
+            
+            if (contentLength > 0) {
+                body.reserve(contentLength);
+                while (stream.good() && body.length() < contentLength) {
+                    char buffer[128];
+                    stream.read(buffer, std::min(sizeof(buffer), contentLength - body.length()));
+                    body.append(buffer, stream.gcount());
+                }
+                
+                // Debugowanie
+                std::cerr << "Received body: " << body << std::endl;
+                
+                // Parsuj JSON tylko jeśli body nie jest puste
+                if (!body.empty()) {
+                    Poco::JSON::Parser parser;
+                    Poco::Dynamic::Var result = parser.parse(body);
+                    Poco::JSON::Object::Ptr jsonPtr = result.extract<Poco::JSON::Object::Ptr>();
+                    requestJson = *jsonPtr;
+                }
+            }
         }
         
         // Wywołanie handlera

@@ -1,6 +1,9 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
+#include <sstream>
 #include "api/pam_api.h"
 
 namespace api {
@@ -44,19 +47,50 @@ Poco::JSON::Object handleRecord(const Poco::JSON::Object& request) {
         Poco::Net::HTTPResponse pythonResponse;
         std::istream& responseStream = session.receiveResponse(pythonResponse);
         
-        std::cerr << "Otrzymano odpowiedź od serwera Python: " << pythonResponse.getStatus() << std::endl;
+        // Odczytaj treść odpowiedzi
+        std::string responseContent;
+        Poco::JSON::Object pythonResponseJson;
+        
+        if (pythonResponse.getContentLength() > 0) {
+            std::vector<char> buffer(pythonResponse.getContentLength());
+            responseStream.read(buffer.data(), buffer.size());
+            responseContent = std::string(buffer.data(), buffer.size());
+            
+            std::cerr << "Otrzymano odpowiedź od serwera Python: " << responseContent << std::endl;
+            
+            // Parsowanie JSON z odpowiedzi
+            if (!responseContent.empty()) {
+                Poco::JSON::Parser parser;
+                Poco::Dynamic::Var result = parser.parse(responseContent);
+                pythonResponseJson = *result.extract<Poco::JSON::Object::Ptr>();
+            }
+        }
         
         if (pythonResponse.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
             response.set("status", "success");
-            response.set("message", "Recording started");
+            
+            // Przekazanie dodatkowych informacji z odpowiedzi serwera Python
+            if (pythonResponseJson.has("message")) {
+                response.set("message", pythonResponseJson.getValue<std::string>("message"));
+            } else {
+                response.set("message", "Nagrywanie rozpoczęte");
+            }
+            
+            if (pythonResponseJson.has("recording_id")) {
+                response.set("recording_id", pythonResponseJson.getValue<std::string>("recording_id"));
+            }
         } else {
             response.set("status", "error");
-            response.set("message", "Failed to start recording");
+            response.set("message", "Błąd podczas rozpoczynania nagrywania: " + 
+                        std::to_string(pythonResponse.getStatus()));
+            if (!responseContent.empty()) {
+                response.set("error_details", responseContent);
+            }
         }
     } catch (const std::exception& e) {
         std::cerr << "Wystąpił błąd: " << e.what() << std::endl;
         response.set("status", "error");
-        response.set("message", std::string("Error: ") + e.what());
+        response.set("message", std::string("Błąd: ") + e.what());
     }
     
     return response;
