@@ -1,12 +1,17 @@
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <sstream>
 #include "api/faceent_api.h"
 
 namespace api {
 namespace faceent {
 
 void registerEndpoints(SimpleHttpServer& server) {
-    server.addEndpoint("/api/v1/face/detect", handleDetect);
+    // server.addEndpoint("/api/v1/face/detect", handleDetect);
     server.addEndpoint("/api/v1/face/recognize", handleRecognize);
-    server.addEndpoint("/api/v1/face/enroll", handleEnroll);
+    // server.addEndpoint("/api/v1/face/enroll", handleEnroll);
+    server.addEndpoint("/api/v1/face/train", handleTrain);
 }
 
 Poco::JSON::Object handleDetect(const Poco::JSON::Object& request) {
@@ -53,6 +58,55 @@ Poco::JSON::Object handleEnroll(const Poco::JSON::Object& request) {
         response.set("quality_score", 0.95);
     } else {
         response.set("error", "Missing required parameters");
+    }
+    
+    return response;
+}
+
+Poco::JSON::Object handleTrain(const Poco::JSON::Object& request) {
+    Poco::JSON::Object response;
+    
+    // Dodaj debugowanie
+    std::ostringstream debugStr;
+    request.stringify(debugStr);
+    std::cerr << "Received request: " << debugStr.str() << std::endl;
+    
+    if (request.has("video_path")) {
+        std::string videoPath = request.getValue<std::string>("video_path");
+        
+        // Dodaj debugowanie
+        std::cerr << "Video path: " << videoPath << std::endl;
+        
+        // Przygotowanie żądania do serwera Pythona
+        Poco::Net::HTTPClientSession session("localhost", 8081);
+        Poco::Net::HTTPRequest pythonRequest(Poco::Net::HTTPRequest::HTTP_POST, "/train");
+        pythonRequest.setContentType("application/json");
+        
+        // Tworzenie body żądania
+        Poco::JSON::Object requestBody;
+        requestBody.set("video_path", videoPath);
+        std::stringstream ss;
+        requestBody.stringify(ss);
+        
+        // Wysłanie żądania
+        pythonRequest.setContentLength(ss.str().length());
+        std::ostream& requestStream = session.sendRequest(pythonRequest);
+        requestStream << ss.str();
+        
+        // Odbieranie odpowiedzi
+        Poco::Net::HTTPResponse pythonResponse;
+        std::istream& responseStream = session.receiveResponse(pythonResponse);
+        
+        if (pythonResponse.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
+            response.set("status", "success");
+            response.set("message", "Training request sent successfully");
+        } else {
+            response.set("status", "error");
+            response.set("message", "Failed to send training request");
+        }
+    } else {
+        std::cerr << "video_path field not found in request" << std::endl;
+        response.set("error", "No video_path provided");
     }
     
     return response;

@@ -13,24 +13,38 @@
 
 void SimpleHandler::handleRequest(Poco::Net::HTTPServerRequest& request,
                                 Poco::Net::HTTPServerResponse& response) {
-    Poco::DateTime now;
-    std::string timestamp = Poco::DateTimeFormatter::format(now, "%Y-%m-%d %H:%M:%S");
+    auto timestamp = std::time(nullptr);
     
-    std::cout << "\n[" << timestamp << "] "
-              << "Połączenie z " << request.clientAddress().toString()
-              << " - " << request.getMethod()
-              << " " << request.getURI() << std::endl;
-
     try {
-        response.setContentType("application/json");
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-
-        // Dla GET tworzymy pusty obiekt JSON jako wejście
-        Poco::JSON::Object inputJson;
+        // Czytamy body requestu
+        std::string body;
+        std::istream& stream = request.stream();
+        while (stream.good()) {
+            char buffer[128];
+            stream.read(buffer, sizeof(buffer));
+            body.append(buffer, stream.gcount());
+        }
         
-        // Wywołanie handlera i uzyskanie odpowiedzi
-        Poco::JSON::Object responseJson = _handler(inputJson);
-
+        // Debugowanie
+        std::cerr << "Received body: " << body << std::endl;
+        
+        Poco::JSON::Object requestJson;
+        
+        // Parsuj JSON tylko jeśli body nie jest puste
+        if (!body.empty()) {
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var result = parser.parse(body);
+            Poco::JSON::Object::Ptr jsonPtr = result.extract<Poco::JSON::Object::Ptr>();
+            requestJson = *jsonPtr;
+        }
+        
+        // Wywołanie handlera
+        Poco::JSON::Object responseJson = _handler(requestJson);
+        
+        // Ustawienie nagłówków odpowiedzi
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentType("application/json");
+        
         // Przygotowanie i wysłanie odpowiedzi
         std::ostringstream responseStream;
         responseJson.stringify(responseStream);
