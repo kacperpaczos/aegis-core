@@ -15,6 +15,24 @@ void SimpleHandler::handleRequest(Poco::Net::HTTPServerRequest& request,
                                 Poco::Net::HTTPServerResponse& response) {
     auto timestamp = std::time(nullptr);
     
+    // Dodaj nagłówki CORS
+    response.add("Access-Control-Allow-Origin", "http://localhost:1420");
+    response.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.add("Access-Control-Allow-Headers", "Content-Type");
+    response.add("Access-Control-Allow-Credentials", "true");
+    
+    // Logowanie requestu
+    std::cerr << "[" << timestamp << "] " 
+              << request.getMethod() << " " 
+              << request.getURI() << std::endl;
+    
+    // Obsługa preflight request
+    if (request.getMethod() == "OPTIONS") {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+        response.send();
+        return;
+    }
+    
     try {
         // Czytamy body requestu
         std::string body;
@@ -49,6 +67,9 @@ void SimpleHandler::handleRequest(Poco::Net::HTTPServerRequest& request,
         std::ostringstream responseStream;
         responseJson.stringify(responseStream);
         std::string responseStr = responseStream.str();
+        
+        // Logowanie odpowiedzi
+        std::cerr << "[" << timestamp << "] Response: " << responseStr << std::endl;
         
         std::ostream& out = response.send();
         out << responseStr;
@@ -115,6 +136,8 @@ void SimpleHttpServer::start() {
     
     _server = new Poco::Net::HTTPServer(_factory, socket, params);
     _server->start();
+    
+    std::cerr << "Server started on port " << _port << std::endl;
 }
 
 void SimpleHttpServer::stop() {
@@ -122,5 +145,6 @@ void SimpleHttpServer::stop() {
         _server->stop();
         delete _server;
         _server = nullptr;
+        std::cerr << "Server stopped" << std::endl;
     }
-} 
+}
