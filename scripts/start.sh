@@ -56,6 +56,8 @@ run_server() {
     "${BUILD_DIR}/aegis-core"
 }
 
+cd ..
+
 # Główny skrypt
 log_info "🚀 Inicjalizacja projektu aegis-core..."
 check_dependencies
