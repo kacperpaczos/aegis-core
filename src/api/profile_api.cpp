@@ -4,15 +4,18 @@
 #include <Poco/Path.h>
 #include <fstream>
 #include <filesystem>
+#include <sys/stat.h>
 
 namespace api {
 namespace profile {
 
 namespace {
-    const std::string PROFILES_DIR = "profiles";
+    const std::string PROFILES_DIR = "./profiles";
     
     std::string getProfilePath(const std::string& name) {
-        return Poco::Path(PROFILES_DIR, name + ".json").toString();
+        auto path = Poco::Path(PROFILES_DIR, name + ".json").toString();
+        std::cerr << "Generowanie ścieżki dla profilu: " << path << std::endl;
+        return path;
     }
 }
 
@@ -46,48 +49,110 @@ Poco::JSON::Object ProfileData::toJson() const {
 
 ProfileData ProfileData::fromJson(const Poco::JSON::Object& json) {
     ProfileData profile;
-    profile.id = json.getValue<std::string>("id");
-    profile.name = json.getValue<std::string>("name");
     
-    if (json.has("pin")) {
-        profile.pin = json.getValue<std::string>("pin");
+    std::cerr << "Parsowanie JSON na ProfileData..." << std::endl;
+    
+    try {
+        // Wymagane pola
+        profile.id = json.getValue<std::string>("id");
+        profile.name = json.getValue<std::string>("name");
+        
+        // Opcjonalne pole PIN
+        if (json.has("pin") && !json.isNull("pin")) {
+            profile.pin = json.getValue<std::string>("pin");
+        }
+        
+        // Pozostałe pola
+        profile.avatar = json.getValue<std::string>("avatar");
+        profile.background = json.getValue<std::string>("background");
+        
+        // Tablice
+        if (json.has("photos")) {
+            auto photosArray = json.getArray("photos");
+            for (size_t i = 0; i < photosArray->size(); ++i) {
+                profile.photos.push_back(photosArray->getElement<std::string>(i));
+            }
+        }
+        
+        if (json.has("videos")) {
+            auto videosArray = json.getArray("videos");
+            for (size_t i = 0; i < videosArray->size(); ++i) {
+                profile.videos.push_back(videosArray->getElement<std::string>(i));
+            }
+        }
+        
+        // Daty - obsługa obu formatów nazw pól
+        profile.created_at = json.has("createdAt") ? 
+            json.getValue<std::string>("createdAt") : 
+            json.getValue<std::string>("created_at");
+            
+        profile.updated_at = json.has("updatedAt") ? 
+            json.getValue<std::string>("updatedAt") : 
+            json.getValue<std::string>("updated_at");
+        
+        std::cerr << "Pomyślnie sparsowano profil: " << profile.name << " (ID: " << profile.id << ")" << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Błąd podczas parsowania JSON na ProfileData: " << e.what() << std::endl;
+        throw;
     }
-    
-    profile.avatar = json.getValue<std::string>("avatar");
-    profile.background = json.getValue<std::string>("background");
-    
-    auto photosArray = json.getArray("photos");
-    for (size_t i = 0; i < photosArray->size(); ++i) {
-        profile.photos.push_back(photosArray->getElement<std::string>(i));
-    }
-    
-    auto videosArray = json.getArray("videos");
-    for (size_t i = 0; i < videosArray->size(); ++i) {
-        profile.videos.push_back(videosArray->getElement<std::string>(i));
-    }
-    
-    profile.created_at = json.getValue<std::string>("createdAt");
-    profile.updated_at = json.getValue<std::string>("updatedAt");
     
     return profile;
 }
 
 bool saveProfile(const ProfileData& profile) {
     try {
-        // Upewnij się, że katalog profiles istnieje
-        Poco::File profilesDir(PROFILES_DIR);
+        std::string baseDir = PROFILES_DIR;
+        std::cerr << "Katalog bazowy: " << baseDir << std::endl;
+        
+        Poco::File profilesDir(baseDir);
+        std::cerr << "Sprawdzanie katalogu: " << profilesDir.path() << std::endl;
+        
         if (!profilesDir.exists()) {
-            profilesDir.createDirectories();
+            std::cerr << "Katalog nie istnieje, próba utworzenia: " << baseDir << std::endl;
+            try {
+                profilesDir.createDirectories();
+                std::cerr << "Katalog utworzony pomyślnie" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Błąd podczas tworzenia katalogu: " << e.what() << std::endl;
+                return false;
+            }
+            
+            try {
+                chmod(baseDir.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+                std::cerr << "Uprawnienia katalogu ustawione pomyślnie" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Błąd podczas ustawiania uprawnień katalogu: " << e.what() << std::endl;
+                return false;
+            }
         }
-
-        // Zapisz profil do pliku JSON
-        std::ofstream file(getProfilePath(profile.id));
-        if (!file) return false;
-
-        Poco::JSON::Object json = profile.toJson();
-        json.stringify(file);
+        
+        std::string filePath = getProfilePath(profile.id);
+        std::cerr << "Próba zapisu profilu do: " << filePath << std::endl;
+        
+        // Serializuj profil do JSON
+        Poco::JSON::Object profileJson = profile.toJson();
+        std::ostringstream oss;
+        profileJson.stringify(oss);
+        
+        // Zapisz do pliku
+        std::ofstream file(filePath, std::ios::out | std::ios::trunc);
+        if (!file.is_open()) {
+            std::cerr << "Nie można otworzyć pliku do zapisu: " << filePath << std::endl;
+            return false;
+        }
+        
+        file << oss.str();
+        file.close();
+        
+        // Ustaw uprawnienia 644 dla pliku
+        chmod(filePath.c_str(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        
+        std::cerr << "Profil został pomyślnie zapisany: " << profile.name << " (ID: " << profile.id << ")" << std::endl;
         return true;
-    } catch (...) {
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Błąd podczas zapisu profilu: " << e.what() << std::endl;
         return false;
     }
 }
@@ -137,7 +202,8 @@ Poco::JSON::Object handleSyncProfiles(const Poco::JSON::Object& request) {
             std::cerr << "Przetwarzanie profilu: " << profile.name << " (ID: " << profile.id << ")" << std::endl;
             profiles.push_back(profile);
         }
-        
+
+        std::cerr << "Przetworzono " << profiles.size() << " profili" << std::endl;
         // Zapisz wszystkie profile
         for (const auto& profile : profiles) {
             if (saveProfile(profile)) {
